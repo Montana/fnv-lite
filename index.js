@@ -1,262 +1,127 @@
-
 (function (root, factory) {
-
-  if (typeof define === 'function' && define.amd) {
-    // AMD. Register as an anonymous module.
-    define([], factory);
-  } else if (typeof exports === 'object') {
-    // Node. Does not work with strict CommonJS, but
-    // only CommonJS-like environments that support module.exports,
-    // like Node.
-    module.exports = factory();
+  if (typeof define === "function" && define.amd) {
+    define([], factory); 
+  } else if (typeof exports === "object") {
+    module.exports = factory(); 
   } else {
-    // Browser globals (root is window)
-    root.FNV = factory();
+    root.FNV = factory(); 
   }
+})(this, function () {
+  "use strict";
 
-}(this, function() {
+  class FNV {
+    static PRIME = [0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x3b];
+    static BASE64_LOOKUP = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    static BASE64_SAFE_LOOKUP = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+    static BASE36_LOOKUP = "0123456789abcdefghijklmnopqrstuvwxyz";
 
-  'use strict';
+    constructor() {
+      this._value = [
+        0x6c, 0x62, 0x27, 0x2e, 0x07, 0xbb, 0x01, 0x42, 0x62, 0xb8, 0x21, 0x75, 0x62, 0x95, 0xc5, 0x8d,
+      ];
+      this._scratch = new Array(16);
+    }
 
-  //
-  // FNV Interface
+    static hash(string, encoding = "hex") {
+      return new FNV().update(string).digest(encoding);
+    }
 
-  // 1000000000000000000013b
-  FNV.PRIME = [ 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x3b ];
+    update(input) {
+      if (typeof input === "string") {
+        input = this._stringToBytes(input);
+      }
 
-  FNV.BASE64_LOOKUP = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
-  FNV.BASE64_SAFE_LOOKUP = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
-  FNV.BASE36_LOOKUP = '0123456789abcdefghijklmnopqrstuvwxyz';
+      for (let i = 0; i < input.length; i++) {
+        this._value[15] ^= input[i];
+        this._primeMultiply();
+      }
 
-  // public class methods.
-  FNV.hex = hex;
-  FNV.base36 = base36;
-  FNV.base64 = base64;
-  FNV.base64Url = base64Url;
+      return this;
+    }
 
-  // Public instance methods.
-  FNV.prototype.update = update;
-  FNV.prototype.digest = digest;
+    digest(encoding) {
+      switch (encoding) {
+        case "base64Url":
+          return this._toBase64(true);
+        case "base64":
+          return this._toBase64();
+        case "base36":
+          return this._toBase36();
+        case "hex":
+          return this._value.map((byte) => byte.toString(16).padStart(2, "0")).join("");
+        default:
+          return [...this._value];
+      }
+    }
 
-  // "Private" instance methods.
-  FNV.prototype._b36 = _b36;
-  FNV.prototype._b64 = _b64;
-  FNV.prototype._primeMultiply = _primeMultiply;
- 
-  return FNV;
-
-  //
-  // FNV Implementation
-
-  function FNV() {
-
-    //6c62272e07bb014262b821756295c58d
-    this._value = [ 0x6c, 0x62, 0x27, 0x2e, 0x07, 0xbb, 0x01, 0x42, 0x62, 0xb8, 0x21, 0x75, 0x62, 0x95, 0xc5, 0x8d ];
-    this._scratch = new Array(16);
-
-  }
-
-  // Class method implementations.
-  function hex(string) {
-    return new FNV().update(string).digest('hex');
-  }
-
-  function base36(string) {
-    return new FNV().update(string).digest('base36');
-  }
-
-  function base64(string) {
-    return new FNV().update(string).digest('base64');
-  }
-
-  function base64Url(string) {
-    return new FNV().update(string).digest('base64Url');
-  }
-
-  // Public instance method impleentations.
-  function update(item) {
-
-    var i;
-
-    if (typeof item === 'string') {
-
-      // convert string into byte array
-      var str = item.replace(/\r\n/g, '\n');
-      var out = [], p = 0;
-      for (i = 0; i < str.length; i++) {
-        var c = str.charCodeAt(i);
+    _stringToBytes(str) {
+      let out = [];
+      for (let i = 0; i < str.length; i++) {
+        let c = str.charCodeAt(i);
         if (c < 128) {
-          out[p++] = c;
+          out.push(c);
         } else if (c < 2048) {
-          out[p++] = (c >> 6) | 192;
-          out[p++] = (c & 63) | 128;
+          out.push((c >> 6) | 192, (c & 63) | 128);
         } else {
-          out[p++] = (c >> 12) | 224;
-          out[p++] = ((c >> 6) & 63) | 128;
-          out[p++] = (c & 63) | 128;
+          out.push((c >> 12) | 224, ((c >> 6) & 63) | 128, (c & 63) | 128);
         }
-
       }
-
-      item = out;
-
+      return out;
     }
 
-    for (i = 0; i < item.length; i++) {
-      this._value[15] ^= item[i];
-      this._primeMultiply();
-    }
+    _primeMultiply() {
+      let newValue = new Array(16).fill(0);
 
-    return this;
-
-  }
-
-  function digest(encoding) {
-
-    switch(encoding) {
-    case 'base64Url':
-      return this._b64(true);
-    case 'base64':
-      return this._b64();
-    case 'base36':
-      return this._b36();
-    case 'hex':
-      return this._value.reduce(function(result, octet) {
-        return result + ('00' + octet.toString(16)).slice(-2);
-      }, '');
-    default:
-      return this._value.slice(0);
-    }
-
-  }
-
-  // Private instance method implementations.
-  function _primeMultiply() {
-
-    var product, x;
-
-    // initialize scratch
-    for (x = 0; x < 16; x++) {
-      this._scratch[x] = 0;
-    }
-
-    for (x = 0; x < 16; x++) {
-
-      for (var y = 0; y < 16-x; y++) {
-
-        product = this._value[15-x] * FNV.PRIME[15-y] + (this._scratch[15-(x+y)] || 0);
-
-        if ( product > 255 ) {
-
-          if (x+y+1 < 16) {
-            this._scratch[15-(x+y+1)] += (product >>> 8);
+      for (let x = 0; x < 16; x++) {
+        for (let y = 0; y < 16 - x; y++) {
+          let product = this._value[15 - x] * FNV.PRIME[15 - y] + (newValue[15 - (x + y)] || 0);
+          if (product > 255) {
+            if (x + y + 1 < 16) newValue[15 - (x + y + 1)] += product >>> 8;
+            product &= 0xff;
           }
-          product -= (product >>> 8) << 8;
-
+          newValue[15 - (x + y)] = product;
         }
-
-        this._scratch[15-(x+y)] = product;
-
       }
 
+      this._value = newValue;
     }
 
-    var newValue = this._scratch;
-    this._scratch = this._value;
-    this._value = newValue;
+    _toBase36() {
+      let value = [...this._value];
+      let result = "";
 
-  }
- 
-  function _b36() {
-
-    // initialize scratch
-    for (var x = 0; x < 16; x++) {
-      this._scratch[x] = this._value[x];
-    }
-
-    var resultString = '';
-
-    while(!isZero(this._scratch)) {
-      resultString = FNV.BASE36_LOOKUP.charAt(longDivide36(this._scratch)) + resultString;
-    }
-
-    return resultString;
-
-  }
-
-  function _b64(safe) {
-
-    var result = '';
-
-    var lookup,
-      trailer;
-
-    if (safe) {
-      lookup = FNV.BASE64_SAFE_LOOKUP;
-      trailer = '';
-    } else {
-      lookup = FNV.BASE64_LOOKUP;
-      trailer = '==';
-    }
-
-    for (var i = 0; i < 15; i += 3) {
-
-      var unit = (this._value[i] << 16) + (this._value[i+1] << 8) + this._value[i+2];
-
-      result += lookup[(unit >> 18) & 0x3f] +
-        lookup[(unit >> 12) & 0x3f] +
-        lookup[(unit >> 6) & 0x3f] +
-        lookup[unit & 0x3f];
-
-    }
-
-    var lastUnit = this._value[15] << 16;
-
-    return result + lookup[(lastUnit >> 18) & 0x3f] +
-      lookup[(lastUnit >> 12) & 0x3f] +
-      trailer;
-
-  }
-
-  // Inner functions.
-  function longDivide36(longNum) {
-
-    var remainder = 0,
-      operand = [],
-      operandValue = 0;
-
-    for (var i = 0; i < 16; i++) {
-
-      operand.push(longNum[i]);
-
-      operandValue = 0;
-      for (var j = 0; j < operand.length; j++) {
-        operandValue += operand[j] * Math.pow(256, operand.length-(j+1));
+      while (!value.every((b) => b === 0)) {
+        result = FNV.BASE36_LOOKUP[this._longDivide(value, 36)] + result;
       }
 
-      longNum[i] = Math.floor(operandValue / 36);
-      remainder = operandValue % 36;
-
-      if (longNum[i] > 0) {
-        operand = [remainder];
-      }
-
+      return result;
     }
 
-    return remainder;
+    _toBase64(safe = false) {
+      let lookup = safe ? FNV.BASE64_SAFE_LOOKUP : FNV.BASE64_LOOKUP;
+      let result = "";
 
-  }
-
-  function isZero(array) {
-
-    for (var i = 0; i < array.length; i++) {
-      if (array[i] !== 0) {
-        return false;
+      for (let i = 0; i < 15; i += 3) {
+        let unit = (this._value[i] << 16) + (this._value[i + 1] << 8) + this._value[i + 2];
+        result += lookup[(unit >> 18) & 0x3f] + lookup[(unit >> 12) & 0x3f] + lookup[(unit >> 6) & 0x3f] + lookup[unit & 0x3f];
       }
-    }
-    
-    return true;
 
+      let lastUnit = this._value[15] << 16;
+      return result + lookup[(lastUnit >> 18) & 0x3f] + lookup[(lastUnit >> 12) & 0x3f] + (safe ? "" : "==");
+    }
+
+    _longDivide(value, divisor) {
+      let remainder = 0;
+
+      for (let i = 0; i < value.length; i++) {
+        let operand = (remainder << 8) + value[i];
+        value[i] = Math.floor(operand / divisor);
+        remainder = operand % divisor;
+      }
+
+      return remainder;
+    }
   }
 
-}));
+  return FNV;
+});
